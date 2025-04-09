@@ -14,7 +14,7 @@ def predict(model, dataloader, opt):
     outputs_df = model.predict(dataloader)
 
     # Save the DataFrame to a CSV file
-    output_csv_path = f"{opt['dataset_name']}_transcriptions.csv"  # Specify the desired path and filename
+    output_csv_path = f"{opt['dataset_name']}_transcriptions_{opt['model_type']}.csv"  # Specify the desired path and filename
     outputs_df.to_csv(output_csv_path, index=False)
 
     # Print the DataFrame or confirmation message
@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument("--random_state", type=int, default=42, help="Random state for reproducibility.")
     parser.add_argument("--save_model", type=str, choices=['True', 'False'], default='True', help="Store the training model or no")
     parser.add_argument("--project_name", type=str, default='None', help="Name of the project")
-    parser.add_argument('--model_type', type=str, default='openai/whisper-small')
+    parser.add_argument('--model_type', type=str, default='whisper-small')
     parser.add_argument('--dataset_name', default='speech-accent-archive', 
                         type=str,
                         choices=[

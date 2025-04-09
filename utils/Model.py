@@ -6,7 +6,7 @@ from tqdm import tqdm
 class Whisper(torch.nn.Module):
     def __init__(self, opt):
         super(Whisper, self).__init__()
-        self.model_type = opt['model_type']
+        self.model_type = "openai/" +opt['model_type']
         self.processor = WhisperProcessor.from_pretrained(self.model_type)
         self.model = WhisperForConditionalGeneration.from_pretrained(self.model_type)
 
