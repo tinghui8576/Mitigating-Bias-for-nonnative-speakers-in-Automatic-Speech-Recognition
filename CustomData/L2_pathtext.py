@@ -1,8 +1,6 @@
 import os
-path = '/Users/tinghui/Downloads/l2arctic_release_v5.0'
+path = 'l2arctic_release_v5.0'
 audio_dirs = os.listdir(path)
-audio_dirs
-audio_extensions = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma"}
 audio_entries = []
 text_entries = []
 for dirpath, _, filenames in os.walk(path):
