@@ -1,4 +1,5 @@
 import argparse
+import os
 from datasets import Dataset, Audio, Value
 
 parser = argparse.ArgumentParser(description='Preliminary data preparation script before Whisper Fine-tuning.')
@@ -9,13 +10,18 @@ args = parser.parse_args()
 
 scp_entries = open(f"{args.source_data_dir}/audio_paths", 'r').readlines()
 txt_entries = open(f"{args.source_data_dir}/text", 'r').readlines()
+accent_entries = open(f"{args.source_data_dir}/accent", 'r').readlines()
 
+os.makedirs(args.output_data_dir, exist_ok=True)
 if len(scp_entries) == len(txt_entries):
     audio_dataset = Dataset.from_dict({"audio": [audio_path.split()[1].strip() for audio_path in scp_entries],
-                    "sentence": [' '.join(text_line.split()[1:]).strip() for text_line in txt_entries]})
-
+                    "sentence": [' '.join(text_line.split()[1:]).strip() for text_line in txt_entries],
+                    "accents": [accent_line.split()[1]for accent_line in accent_entries]
+                    })
+    print(audio_dataset["accents"])
     audio_dataset = audio_dataset.cast_column("audio", Audio(sampling_rate=16_000))
     audio_dataset = audio_dataset.cast_column("sentence", Value("string"))
+    audio_dataset = audio_dataset.cast_column("accents", Value("string"))
     audio_dataset.save_to_disk(args.output_data_dir)
     print('Data preparation done')
 
