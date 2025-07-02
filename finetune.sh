@@ -21,6 +21,8 @@ source /work3/s232855/whisper/bin/activate
 
 ngpu=1  # number of GPUs to perform distributed training on.
 
+export WANDB_API_KEY=$(cat ~/.wandb_key)
+
 torchrun --nproc_per_node=${ngpu} finetune.py \
         --language English \
         --sampling_rate 16000 \

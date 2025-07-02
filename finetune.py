@@ -103,6 +103,7 @@ parser.add_argument(
     default='output_model_dir', 
     help='Output directory for the checkpoints generated.'
 )
+
 # parser.add_argument(
 #     '--train_datasets', 
 #     type=str, 
@@ -207,13 +208,22 @@ do_lower_case = False
 do_remove_punctuation = False
 normalizer = BasicTextNormalizer()
 
-
+wandb.login()
+import time
+run_name = f"whisper_finetune_{int(time.time())}"
+wandb.init(project="whisper-finetune", config=vars(args), name=run_name)
 #############################       MODEL LOADING       #####################################
 
-feature_extractor = WhisperFeatureExtractor.from_pretrained(args.model_name, cache_dir=shared_disk)
-tokenizer = WhisperTokenizer.from_pretrained(args.model_name, language=args.language, task="transcribe", cache_dir=shared_disk)
-processor = WhisperProcessor.from_pretrained(args.model_name, language=args.language, task="transcribe", cache_dir=shared_disk)
-model = WhisperForConditionalGeneration.from_pretrained(args.model_name, cache_dir=shared_disk)
+
+feature_extractor = WhisperFeatureExtractor.from_pretrained(args.model_name)
+tokenizer = WhisperTokenizer.from_pretrained(args.model_name, language=args.language, task="transcribe")
+processor = WhisperProcessor.from_pretrained(args.model_name, language=args.language, task="transcribe")
+model = WhisperForConditionalGeneration.from_pretrained(args.model_name)
+
+# feature_extractor = WhisperFeatureExtractor.from_pretrained(args.model_name, cache_dir=shared_disk)
+# tokenizer = WhisperTokenizer.from_pretrained(args.model_name, language=args.language, task="transcribe", cache_dir=shared_disk)
+# processor = WhisperProcessor.from_pretrained(args.model_name, language=args.language, task="transcribe", cache_dir=shared_disk)
+# model = WhisperForConditionalGeneration.from_pretrained(args.model_name, cache_dir=shared_disk)
 
 if model.config.decoder_start_token_id is None:
     raise ValueError("Make sure that config.decoder_start_token_id is correctly defined")
@@ -226,8 +236,14 @@ if freeze_encoder:
     model.model.encoder.gradient_checkpointing = False
 
 
-model.config.forced_decoder_ids = None
-model.config.suppress_tokens = []
+model.generation_config.language = args.language
+model.generation_config.task = "transcribe"
+
+model.generation_config.forced_decoder_ids = None
+
+# model.config.forced_decoder_ids = None
+# model.config.suppress_tokens = []
+
 
 if gradient_checkpointing:
     model.config.use_cache = False
@@ -239,6 +255,13 @@ if gradient_checkpointing:
 def prepare_dataset(batch):
     # load and (possibly) resample audio data to 16kHz
     audio = batch["audio"]
+
+    if not isinstance(audio, dict) or "array" not in audio or audio["array"] is None:
+        print("⚠️ Problem with audio input:", audio)
+        return {}
+
+    if torch.isnan(torch.tensor(audio["array"])).any():
+        print("⚠️ Found NaNs in audio array")
 
     # compute log-Mel input features from input audio array 
     batch["input_features"] = processor.feature_extractor(audio["array"], sampling_rate=audio["sampling_rate"]).input_features[0]
@@ -252,8 +275,16 @@ def prepare_dataset(batch):
     if do_remove_punctuation:
         transcription = normalizer(transcription).strip()
     
-    # encode target text to label ids
-    batch["labels"] = processor.tokenizer(transcription).input_ids
+    if transcription is None or len(transcription.strip()) == 0:
+        print("⚠️ Empty transcription:", transcription)
+
+    try:
+        # encode target text to label ids
+        batch["labels"] = processor.tokenizer(transcription).input_ids
+    except Exception as e:
+        print("⚠️ Error tokenizing:", transcription, "\n", e)
+        batch["labels"] = []
+
     return batch
 
 max_label_length = model.config.max_length
@@ -276,7 +307,8 @@ def load_all_datasets():
 
     for ds in datalist:
         print(f"Loading: {ds['Name']} ({ds['Split']})")
-        Location = shared_disk + "/dataset"
+        # Location = shared_disk + "/dataset"
+        Location = "/Users/tinghui/.cache/huggingface/datasets"
 
         # Load dataset
         if ds["Type"] == "load":
@@ -291,11 +323,12 @@ def load_all_datasets():
         dataset = dataset.cast_column("audio", Audio(sampling_rate=args.sampling_rate))
         if ds["Column"] != "sentence":
             dataset = dataset.rename_column(ds["Column"], "sentence")
+        dataset = dataset.filter(lambda x: "IGNORE_TIME_SEGMENT_IN_SCORING" not in x.get("sentence", ""))
         dataset = dataset.remove_columns([col for col in dataset.column_names if col not in ["audio", "sentence"]])
 
         # Apply mapping + filtering before combining
         dataset = dataset.map(prepare_dataset, num_proc=args.num_proc)
-        raw_dataset = raw_dataset.filter(
+        dataset = dataset.filter(
             is_in_length_range,
             input_columns=["input_length", "labels"],
             num_proc=args.num_proc
@@ -322,6 +355,7 @@ class DataCollatorSpeechSeq2SeqWithPadding:
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         # split inputs and labels since they have to be of different lengths and need different padding methods
         # first treat the audio inputs by simply returning torch tensors
+        print(features)
         input_features = [{"input_features": feature["input_features"]} for feature in features]
         batch = self.processor.feature_extractor.pad(input_features, return_tensors="pt")
 
@@ -385,7 +419,7 @@ if args.train_strategy == 'epoch':
         predict_with_generate=True,
         generation_max_length=225,
         logging_steps=500,
-        report_to=["tensorboard"],
+        report_to=["wandb", "tensorboard"],
         evaluation_strategy="no",
         load_best_model_at_end=False,
         metric_for_best_model="wer",
@@ -410,7 +444,7 @@ elif args.train_strategy == 'steps':
         predict_with_generate=True,
         generation_max_length=225,
         logging_steps=500,
-        report_to=["tensorboard"],
+        report_to=["wandb", "tensorboard"],
         evaluation_strategy="no",
         load_best_model_at_end=False,
         metric_for_best_model="wer",
