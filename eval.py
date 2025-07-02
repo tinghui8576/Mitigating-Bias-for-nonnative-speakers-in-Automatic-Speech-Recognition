@@ -88,7 +88,7 @@ df = pd.read_csv('Data/speech-accent-archive/bio.csv')
 df.rename(columns={'filename': 'id'}, inplace=True)
 df['sentence'] = 'Please call Stella.  Ask her to bring these things with her from the store:  Six spoons of fresh snow peas, five thick slabs of blue cheese, and maybe a snack for her brother Bob.  We also need a small plastic snake and a big toy frog for the kids.  She can scoop these things into three red bags, and we will go meet her Wednesday at the train station.'
 df['accent'] = df['native_language'].apply(lambda x: x.split('\n')[0])
-output_df = pd.read_csv('results/test5_best.csv')
+output_df = pd.read_csv('results/lwf3.csv')
 
 
 # df = pd.read_csv('Data/artie-bias-corpus/artie-bias-corpus.tsv', delimiter = '\t')
@@ -113,7 +113,6 @@ for index, row in tqdm(result.iterrows(), total=len(result), desc="Processing CE
     # Normalize the text (predictions and references) for each row (sentence)
     pred = [EnglishTextNormalizer()(output)]
     ref = [EnglishTextNormalizer()(sentence)]
-
     pred_token = pred[0].split() if isinstance(pred, list) else pred.split()
     ref_token = ref[0].split() if isinstance(ref, list) else ref.split()
 
@@ -125,15 +124,14 @@ for index, row in tqdm(result.iterrows(), total=len(result), desc="Processing CE
     )
     ember_hparams["weighted_wer_stats"].clear()
 
-    # print(row['id'], round(WER(pred, ref).item() * 100, 3))
 
     # Append the results for this sentence to the list
     eva.append({
         "id":       row['id'],  
-        "WER":      round(WER(pred, ref).item() * 100, 3),
-        "CER":      round(CER(pred, ref).item() * 100, 3),
-        "MER":      round(MER(pred, ref).item() * 100, 3),
-        "WIL":      round(WIL(pred, ref).item() * 100, 3),
+        "WER":      round(WER(ref, pred).item() * 100, 3),
+        "CER":      round(CER(ref, pred).item() * 100, 3),
+        "MER":      round(MER(ref, pred).item() * 100, 3),
+        "WIL":      round(WIL(ref, pred).item() * 100, 3),
         "Ember":    round(ember_hparams["weighted_wer_stats"].summarize()['ember_wer'], 3),
         "SemDist":  round(semdist.semdist(pred, ref), 5)
     })
@@ -142,5 +140,5 @@ for index, row in tqdm(result.iterrows(), total=len(result), desc="Processing CE
 
 
 results_df = pd.DataFrame(eva)
-results_df.to_csv("eva5.csv", index=False)
+results_df.to_csv("results/eva_lwf3.csv", index=False)
 print(results_df['SemDist'].max(), results_df['SemDist'].min())
