@@ -1,7 +1,100 @@
+
+# import torch
+# import wandb
+# import argparse
+# import utils.load as load
+# import utils.Model as Model
+# import utils
+# from torch.utils.data import DataLoader
+
+# def predict(model, dataloader, opt):
+    
+    
+    
+#     outputs_df = model.predict(dataloader)
+
+#     # Save the DataFrame to a CSV file
+#     output_csv_path = f"{opt['dataset_name']}_transcriptions_{opt['model_type']}.csv"  # Specify the desired path and filename
+#     outputs_df.to_csv(output_csv_path, index=False)
+
+#     # Print the DataFrame or confirmation message
+#     print(f"Transcriptions saved to {output_csv_path}")
+#     return outputs_df
+
+# def evaulate(pred_df, results):
+
+#     return 
+# def parse_args():
+#     # Initialize argument parser
+#     parser = argparse.ArgumentParser(description="Train a speech classification model with wandb logging.")
+    
+#     # Define arguments
+#     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training.")
+#     parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs.")
+#     parser.add_argument("--random_state", type=int, default=42, help="Random state for reproducibility.")
+#     parser.add_argument("--save_model", type=str, choices=['True', 'False'], default='True', help="Store the training model or no")
+#     parser.add_argument("--project_name", type=str, default='None', help="Name of the project")
+#     parser.add_argument('--model_type', type=str, default='whisper-small')
+#     parser.add_argument('--dataset_name', default='speech-accent-archive', 
+#                         type=str,
+#                         choices=[
+#                             'speech-accent-archive',
+#                             'artie-bias-corpus', 
+#                         ], 
+#                         help="Name of the dataset")
+#     parser.add_argument('--sens_name', default='Gender', choices=['Gender', 'Age'])
+    
+#     # parser.add_argument('--sens_classes', type=str, choices=['Binary', 'Multiple'], default='Binary', help='number of sensitive classes')
+    
+#     parser.add_argument('--use_cuda', action='store_true', help="Flag to use GPU if available.")
+#     # parser.add_argument('--wandb', type=str, choices=['True', 'False'], default='True', help="Use wandb logging (True or False).")
+    
+    
+#     return parser.parse_args()
+
+
+
+        
+
+# if __name__ == "__main__":
+    
+
+#     opt = vars(parse_args())
+
+#     # Check if a GPU is available
+#     opt['device'] = torch.device('cuda' if opt['use_cuda'] and torch.cuda.is_available() else 'cpu')
+ 
+#     # if opt['wandb'] == 'True' or opt['wandb'] == True:
+        
+#     #     wandb.init(
+#     #         project=opt['project_name'],
+#     #         name=opt['experiment'],
+#     #         config=opt
+#     #     )
+#     # else:
+#     #     wandb = None
+    
+#     df = load.get_dataloader(opt)
+
+#     batch_size = opt['batch_size']
+#     test_dataset = utils.WhisperDataset(df)
+#     test_loader = DataLoader(test_dataset,batch_size= batch_size, collate_fn=utils.collate_fn, shuffle=True)
+#     model = Model.Whisper(opt)
+#     pred_df = predict(model, test_loader, opt)
+#     #evaluate(model, test_loader, opt)
+#     # # Train the model
+#     # train(model, train_loader, test_loader, opt, epochs=opt['epochs'])
+    
+#     # if opt['wandb'] == 'True' or opt['wandb'] == True:
+#     #     wandb.finish()
+#     # else:
+#     #     wandb = None
+    
 import os
 import torch
 import argparse
 from utils.Model import Whisper
+from utils.language_map import language_family_dict, accent_map
 import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
@@ -96,19 +189,20 @@ def smart_merge(predictions, min_overlap=3):
     return " ".join(final_words)
 
 
-def transcribe_chunks(chunks, sr, processor, model, device, forced_decoder_ids):
+def transcribe_chunks(chunks, sr, processor, model, device, forced_decoder_ids, accent_id):
     inputs = processor.feature_extractor(chunks, sampling_rate=sr, return_tensors="pt")
     input_features = inputs.input_features.to(device)
 
     generated_ids = model.generate(
         input_features,
-        forced_decoder_ids=forced_decoder_ids
+        accent_id = accent_id,
+        # forced_decoder_ids=forced_decoder_ids
     )
     text = processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    
 
     merged = smart_merge(text)
     return merged
+
 
 
 def main(args):
@@ -120,14 +214,17 @@ def main(args):
     if args.is_public_repo == False:
         # Load processor and custom Whisper model
         processor = WhisperProcessor.from_pretrained(args.ckpt_dir)
-        model = Whisper(opt, processor)
-        state_dict = torch.load(os.path.join(args.ckpt_dir, "best_model.pt"), map_location=device)
+        model = Whisper(opt['model_name'], args.language)
+        # state_dict = torch.load(os.path.join(args.ckpt_dir, "best_model.pt"), map_location=device)
         # new_state_dict = {}
         # for k, v in state_dict.items():
         #     new_key = k.replace("module.", "") if k.startswith("module.") else k
         #     new_state_dict[new_key] = v
         # model.load_state_dict(new_state_dict)
-        model.load_state_dict({k.replace("module.", ""): v for k, v in state_dict.items()})
+        # model.load_state_dict({k.replace("module.", ""): v for k, v in state_dict.items()})
+        model.load_state_dict(torch.load(f"{args.ckpt_dir}/full_model.pth", map_location=torch.device('cpu')))
+        model.eval()
+        # model.Biasadapter.load_state_dict({k.replace("module.Biasadapter.", ""): v for k, v in state_dict.items() if k.startswith("module.Biasadapter.")})
     else:
         model_id = args.hf_model
         model = WhisperForConditionalGeneration.from_pretrained(model_id)
@@ -152,10 +249,11 @@ def main(args):
         for item in tqdm(dataset, desc='Decode Progress'):
             audio = item["audio"]
             audio_array = audio["array"]
+            accent = item["accents"]
             sr = audio["sampling_rate"]
             chunks = chunk_audio(audio_array, sr, chunk_length_s=25, stride_s=5)
-        
-            chunk_preds = transcribe_chunks(chunks, sr, processor, model, f"cuda:{args.device}" if args.device >= 0 else "cpu", forced_decoder_ids)
+            chunk_preds = transcribe_chunks(chunks, sr, processor, model, 'cpu', forced_decoder_ids, accent_id=torch.tensor([accent_map[language_family_dict[accent]]]))
+            # chunk_preds = transcribe_chunks(chunks, sr, processor, model, f"cuda:{args.device}" if args.device >= 0 else "cpu", forced_decoder_ids)
 
             # Merge top-1 from each chunk for now
             # merged_prediction = " ".join([pred[0] for pred in chunk_preds])
@@ -250,3 +348,5 @@ if __name__ == "__main__":
 # --batch_size 8 \
 # --output_dir results \
 # --outputs large
+
+# python main2.py --is_public_repo False --ckpt_dir "Model/test5" --language en --eval_datasets CustomData/SSA --device -1 --batch_size 8 --output_dir results --outputs test5_best
