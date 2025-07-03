@@ -1,6 +1,8 @@
 import random
 from utils.language_map import language_family_dict, accent_map
 from datasets import Dataset, IterableDataset
+import utils.constant as const
+
 def accent_id(batch):
     try:
         batch["accent_id"]= accent_map[language_family_dict [batch["accents"].lower()]]
@@ -28,10 +30,9 @@ def balance_dataset(dataset, high_limit=300, low_limit=100):
     selected_indices = []
     for group, indices in grouped_indices.items():
         target = low_limit if group in range(7, 14) else high_limit
-        random.seed(42)
+        random.seed(const.random_state)
         sample = random.sample(indices, min(len(indices), target))
         print(f"Group {group}: selected {len(sample)} / total {len(indices)}")
         selected_indices.extend(sample)
 
-    # return dataset.select(selected_indices)
-    return dataset.select([10])
+    return dataset.select(selected_indices)

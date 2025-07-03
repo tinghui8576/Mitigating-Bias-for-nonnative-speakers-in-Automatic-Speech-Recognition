@@ -1,13 +1,16 @@
 import torch
 from typing import Any, Dict
 from functools import partial
-from transformers.models.whisper.english_normalizer import BasicTextNormalizer
 from transformers import WhisperProcessor
-from dataloader.preprocessing.augmentation import augment_audio
-from dataloader.filter import filter_audio_length, filter_labels
-from dataloader.utils import compute_accent_id, balance_dataset
+from transformers.models.whisper.english_normalizer import BasicTextNormalizer
 from datasets import Audio, Dataset, concatenate_datasets
-from utils.constant import num_proc
+from DatasetLoad.load_dataset import load_process_dataset
+from DatasetLoad.preprocessing.augmentation import augment_audio
+from DatasetLoad.filter import filter_audio_length, filter_labels
+from DatasetLoad.utils import compute_accent_id, balance_dataset
+
+
+import utils.constant as const
 
 do_lower_case = True
 do_remove_punctuation = True
@@ -55,7 +58,7 @@ def prepare_batch(batch: Dict[str, Any],
         batch["labels"] = []
     return batch
 
-from dataloader.load_dataset import load_process_dataset
+
 
 def preprocess_dataset(datalist:Dict[str, Any],
                        processor: WhisperProcessor)-> Dataset:
@@ -69,17 +72,18 @@ def preprocess_dataset(datalist:Dict[str, Any],
         dataset = dataset.remove_columns([col for col in dataset.column_names if col not in ["audio", "sentence", "accents"]])
         dataset = compute_accent_id(dataset)
 
-        dataset = balance_dataset(dataset, high_limit = ds['High_Limit'], low_limit = ds['Low_Limit'])
+        if ds['Limit'] != None:
+            dataset = balance_dataset(dataset, high_limit = ds['Limit'][0], low_limit = ds['Limit'][1])
+        dataset = dataset.select([10])
         if ds['augment']:
             augment_dataset = partial(augment_audio, sample_rate=processor.feature_extractor.sampling_rate)
-            dataset = dataset.map(augment_dataset, num_proc=num_proc)
-            print('augment')
-            
+            dataset = dataset.map(augment_dataset, num_proc=const.num_proc)
+        
         prepare_dataset = partial(prepare_batch,
                                   processor=processor)
-        dataset = dataset.map(prepare_dataset, num_proc=num_proc)
+        dataset = dataset.map(prepare_dataset, num_proc=const.num_proc)
         
         dataset = filter_audio_length(dataset)
        
         processed_datasets.append(dataset)
-    return concatenate_datasets(processed_datasets).shuffle(seed=22)
+    return concatenate_datasets(processed_datasets).shuffle(seed=const.random_state)

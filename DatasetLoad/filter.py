@@ -1,9 +1,9 @@
 import re
 from datasets import Dataset, IterableDataset
-from utils.constant import MAX_LABEL_LENGTH, MIN_INPUT_LENGTH, MAX_INPUT_LENGTH, num_proc
+import utils.constant as const
 
 def is_in_length_range(length, labels):
-    return MIN_INPUT_LENGTH < length < MAX_INPUT_LENGTH and 0 < len(labels) < MAX_LABEL_LENGTH
+    return const.MIN_INPUT_LENGTH < length < const.MAX_INPUT_LENGTH and 0 < len(labels) < const.MAX_LABEL_LENGTH
 
 def filter_audio_length(dataset: Dataset | IterableDataset) -> Dataset | IterableDataset:
     """
@@ -14,7 +14,7 @@ def filter_audio_length(dataset: Dataset | IterableDataset) -> Dataset | Iterabl
     
     dataset = dataset.filter(is_in_length_range,
                             input_columns=["input_length", "labels"],
-                            num_proc=num_proc) 
+                            num_proc=const.num_proc) 
     
     return dataset
 
@@ -36,6 +36,6 @@ def filter_labels(dataset: Dataset | IterableDataset) -> Dataset | IterableDatas
     # Sanity check:
     assert "sentence" in dataset.column_names, "Sentence column (Transcript) not found in dataset."
     
-    dataset = dataset.filter(invalid_sentences, num_proc=num_proc) 
+    dataset = dataset.filter(invalid_sentences, num_proc=const.num_proc) 
     return dataset
 
