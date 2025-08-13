@@ -73,5 +73,5 @@ class LwFTrainer(Seq2SeqTrainer):
                 p_old = F.softmax(old_logits / T, dim=-1)
                 p_new = F.log_softmax(new_logits / T, dim=-1)
                 distill_loss = F.kl_div(p_new, p_old, reduction="batchmean") * (T * T)
-                loss = (1 - alpha) * new_loss + alpha * distill_loss
+                loss = new_loss + alpha * distill_loss
         return (loss, outputs) if return_outputs else loss
