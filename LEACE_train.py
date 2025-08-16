@@ -1,19 +1,13 @@
 import torch
 import os
-from dataclasses import dataclass
-from typing import Any, Dict, List, Union
 from tqdm import tqdm
-from datasets import DatasetDict
 from transformers import WhisperProcessor, WhisperModel
 from concept_erasure import LeaceEraser
-from torch.cuda.amp import autocast, GradScaler
-from accelerate import Accelerator
-from torch.utils.data import DataLoader
 import argparse
-import utils.load as load
-from utils.language_map import language_family_dict, accent_map
+import load as load
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score
+from DatasetLoad.dataset_loader import load_dataset_dict
 import numpy as np
 #######################     ARGUMENT PARSING        #########################
 import transformers
@@ -119,32 +113,19 @@ def parse_args():
         default='output_model_dir', 
         help='Output directory for the checkpoints generated.'
     )
-    parser.add_argument('--sens_name', default='Gender', choices=['Gender', 'Age'])
-    
     parser.add_argument('--use_cuda', action='store_true', help="Flag to use GPU if available.")
-    # parser.add_argument('--wandb', type=str, choices=['True', 'False'], default='True', help="Use wandb logging (True or False).")
-    
-    
+      
     return parser.parse_args()
 
 opt = vars(parse_args())
 # Check if a GPU is available
 device = torch.device('cuda' if opt['use_cuda'] and torch.cuda.is_available() else 'cpu')
 
-
-
 ############################        DATASET LOADING AND PREP        ##########################
 processor = WhisperProcessor.from_pretrained(opt["model_name"], language=opt["language"], task="transcribe")
 
-
-raw_dataset = DatasetDict()
-raw_dataset["train"] = load.load_all_datasets(opt, processor, 'train')
-raw_dataset["eval"] = load.load_all_datasets(opt, processor, 'eval')
-
-
+raw_dataset = load_dataset_dict(processor)
 #############################       MODEL LOADING       #####################################
-
-
 model = WhisperModel.from_pretrained("openai/whisper-small").to(device)
 processor = WhisperProcessor.from_pretrained("openai/whisper-small")
 model.eval()
@@ -189,7 +170,7 @@ for layer_idx in range(12):
 
     # --- Eval phase ---
     X_test, y_test = process_dataset(raw_dataset["eval"], layer_idx)
-    X_test = X_test.to(torch.float32)  # LEACE works on float32
+    X_test = X_test.to(torch.float32) 
 
     # Accuracy before erasure
     clf = SGDClassifier(loss="hinge", max_iter=3000, tol=1e-3, random_state=42)
