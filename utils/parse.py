@@ -22,7 +22,8 @@ def parse_args():
         '--strategy', 
         type=str, 
         required=False, 
-        default='LORA', 
+        choices=['lora', 'lwf'], 
+        default='lora', 
         help='Finetune Strategy for Whisper model.'
     )
     parser.add_argument(
@@ -106,7 +107,6 @@ def parse_args():
         default='output_model_dir', 
         help='Output directory for the checkpoints generated.'
     )
-    parser.add_argument('--sens_name', default='Gender', choices=['Gender', 'Age'])
     
     parser.add_argument('--use_cuda', action='store_true', help="Flag to use GPU if available.")
     parser.add_argument('--wandb', type=str, choices=['True', 'False'], default='True', help="Use wandb logging (True or False).")
