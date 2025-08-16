@@ -14,44 +14,7 @@ if not os.path.exists(output_csv):
         writer = csv.writer(f)
         writer.writerow(["id", "transcript"])  # header
 
-# def transcribe_file(audio_file: str) -> speech.RecognizeResponse:
-#     """Transcribe the given audio file.
-#     Args:
-#         audio_file (str): Path to the local audio file to be transcribed.
-#             Example: "resources/audio.wav"
-#     Returns:
-#         cloud_speech.RecognizeResponse: The response containing the transcription results
-#     """
-
-#     # Load and resample to 16kHz
-#     audio, sr = librosa.load(audio_file, sr=16000)
-
-#     # Save to in-memory buffer as WAV
-#     buffer = io.BytesIO()
-#     sf.write(buffer, audio, 16000, format='WAV')
-#     buffer.seek(0)
-
-#     client = speech.SpeechClient()
-
-#     # Load content from buffer
-#     audio_content = buffer.read()
-
-#     audio = speech.RecognitionAudio(content=audio_content)
-#     config = speech.RecognitionConfig(
-#         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-#         sample_rate_hertz=16000,
-#         language_code="en-US",
-#     )
-
-#     response = client.recognize(config=config, audio=audio)
-
-#     # Each result is for a consecutive portion of the audio. Iterate through
-#     # them to get the transcripts for the entire audio file.
-#     sentences = [result.alternatives[0].transcript for result in response.results]
-#     full_transcript = " ".join(sentences)
-#     return full_transcript
-
-
+# Transcribe a chunk of audio using Google Cloud Speech-to-Text
 def transcribe_audio_chunk(audio_chunk, sr):
     """Transcribe a chunk of audio using in-memory buffer."""
     buffer = io.BytesIO()
@@ -71,6 +34,7 @@ def transcribe_audio_chunk(audio_chunk, sr):
     response = client.recognize(config=config, audio=audio)
     return " ".join([r.alternatives[0].transcript for r in response.results])
 
+# Transcribe a file, handling long audio by chunking if necessary
 def transcribe_file(audio_file: str, max_duration=60):
     """Handles long audio by chunking if needed."""
     audio, sr = librosa.load(audio_file, sr=16000)
