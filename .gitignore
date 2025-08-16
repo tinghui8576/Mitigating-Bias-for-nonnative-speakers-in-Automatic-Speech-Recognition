@@ -1,9 +1,11 @@
 Data
 CustomData
-Model
+models
 EWC
 leace_erasers
 Paper
 wandb
 results
 pretrained_models
+*__pycache__
+.wandb_key
