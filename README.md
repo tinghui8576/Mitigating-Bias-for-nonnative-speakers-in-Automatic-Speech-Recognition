@@ -45,6 +45,7 @@ Project Supervisor:
 | CommonVoice  | https://commonvoice.mozilla.org/en/datasets                                                   |
 | Speech Accent Archive  | https://accent.gmu.edu/                                                             |
 
+## Instructions
 ### For CustomData
 Some custom data (i.e. speech accent archive) need to be process into the Dataset format.
 See SSA_pathtext.py for an example of how to preprocess the data into desired format. 
@@ -54,4 +55,133 @@ After `audio_paths` `text` `accent` files are created. Prepare the data ino arro
 python data_prep.py --source_data_dir [PATH TO SOURCE DIR] --output_data_dir [PATH TO STORE ARROW FILE]
 ```
 
-### For Finetuning 
+### For Mitigation Strategy
+
+1. **Adapter**
+- Run the finetune script with Adapter method
+    ```python
+    torch --nproc_per_node=${ngpu} finetune.py \ 
+        --random_state [RANDOM SEED]\ 
+        --model_name [WHISPER MODEL NAME TO FINETUNE]\
+        --language [LANGAUGE FOR TRANSCRIBE]\
+        --strategy [FINETUNE STRATEGY]\
+        --num_proc [NUMBER OF PROCESSOR]\
+        --train_strategy [STEP OR EPOCH TO TRAIN]\
+        --learning_rate [LEARNING RATE]\
+        --warmup [WARMUP STEPS]\
+        --train_batchsize [TRAINSET BATCH SIZE]\
+        --eval_batchsize [EVALSET BATCH SIZE]\
+        --num_epochs [NUMBER OF EPOCHS]\
+        --num_steps [NUMBER OF STEPS]\
+        --resume_from_ckpt [PATH TO RESUME TRAINING]\
+        --project_name [NAME FOR THE PROJECT]\
+        --save_model [SAVE MODEL OR NOT]\
+        --output_dir [DIRECTORY FOR SAVING MODEL]
+    ```
+- An example for finetuning with step using LoRA strategy
+    ```python
+    torchrun --nproc_per_node=${ngpu} finetune.py \
+            --language en \
+            --sampling_rate 16000 \
+            --num_proc 4 \
+            --strategy 'LoRA' \
+            --train_strategy steps \
+            --learning_rate 3e-3 \
+            --warmup 1000 \
+            --train_batchsize 16 \
+            --eval_batchsize 8 \
+            --output_dir test \
+            --num_steps 10000 \
+            --resume_from_ckpt None \
+    ```
+
+2. **LEACE**
+
+- Example to train LEACE concept eraser
+    ```python
+    python LEACE_train.py \
+        --model_name openai/whisper-small \
+        --language English \
+        --batchsize 16 \
+        --output_dir leace_erasers
+    ```
+### For Transcribing Models and Evalauting The Performance
+```python
+python transcribe_eval.py
+    --is_public_repo [MODEL ON HUGGING FACE OR NOT] \
+    --model_name [MODEL NAME ON HUGGING FACE] \
+    --strategy [MITIGATION STRATEGY] \
+    --ckpt_dir [PATH TO LOCAL MODEL] \
+    --language [LANGAUGE FOR TRANSCRIBE]\
+    --eval_datasets [PATH FOR DATASET]
+    --device [-1 FOR CPU 0 FOR GPU] \
+    --output_dir [DIRECTORY PATH] \
+    --outputs [FILENAME]
+
+```
+An example to transcribe Speech Accent Archive Dataset with Whisper-small model
+
+```python
+python transcribe_eval.py \
+    --is_public_repo True \
+    --model_name openai/whisper-small \
+    --language en \ 
+    --eval_datasets CustomData/SSA \
+    --device -1 \
+    --output_dir results \
+    --outputs whisper-small
+
+```
+To transcribe Speech Accent Archive Dataset with LwF+ model
+
+```python
+python transcribe_eval.py \
+    --is_public_repo Flase \
+    --ckpt_dir "models/lwf/checkpoint-250/" \
+    --language en \
+    --strategy "lwf" \
+    --eval_datasets CustomData/SSA \
+    --device -1 \
+    --output_dir results \
+    --outputs lwf_best
+
+```
+### For Transcribing with Google Service
+```python
+python google.py
+```
+### Transcribe with Skipping layer and evaluation for performance
+1. **Transcrbe**
+    ```python
+    python ablation_transcribe.py \
+        --is_public_repo [MODEL ON HUGGING FACE OR NOT] \
+        --model_name [MODEL NAME ON HUGGING FACE] \
+        --strategy [MITIGATION STRATEGY] \
+        --ckpt_dir [PATH TO LOCAL MODEL] \
+        --language [LANGAUGE FOR TRANSCRIBE]\
+        --eval_datasets [PATH FOR DATASET]
+        --device [-1 FOR CPU 0 FOR GPU] \
+        --output_dir [DIRECTORY PATH] \
+        --outputs [FILENAME]
+    ```
+    Example
+    ```python
+    python ablation_transcribe.py \
+        --is_public_repo True \
+        --model_name "openai/whisper-small" \
+        --language "en" \
+        --eval_datasets CustomData/SSA  \
+        --device -1 \
+        --output_dir results/ablation/small \
+        --outputs ablation_whisper \
+    ```
+2. **Evalaution**
+    ```python
+    python ablation_eval.py \
+        --eval_dir [PATH TO DIRECTORY SAVING TRANSCRIPTION FROM `ablation_transcribe.py`]
+    ```
+    Example
+    ```python
+    python ablation_eval.py \
+        --eval_dir results/ablation/small
+    ```
