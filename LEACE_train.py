@@ -4,11 +4,9 @@ from tqdm import tqdm
 from transformers import WhisperProcessor, WhisperModel
 from concept_erasure import LeaceEraser
 import argparse
-import load as load
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score
 from DatasetLoad.dataset_loader import load_dataset_dict
-import numpy as np
 #######################     ARGUMENT PARSING        #########################
 import transformers
 print(transformers.__version__)
@@ -17,7 +15,6 @@ def parse_args():
     # Initialize argument parser
     parser = argparse.ArgumentParser(description="Train a speech classification model with wandb logging.")
     # Define arguments
-    parser.add_argument("--random_state", type=int, default=42, help="Random state for reproducibility.")
     parser.add_argument(
         '--model_name', 
         type=str, 
@@ -33,79 +30,12 @@ def parse_args():
         help='Language the model is being adapted to in Camel case.'
     )
     parser.add_argument(
-        '--sampling_rate', 
-        type=int, 
-        required=False, 
-        default=16000, 
-        help='Sampling rate of audios.'
-    )
-    parser.add_argument(
-        '--num_proc', 
-        type=int, 
-        required=False, 
-        default=2, 
-        help='Number of parallel jobs to run. Helps parallelize the dataset prep stage.'
-    )
-    parser.add_argument(
-        '--train_strategy', 
-        type=str, 
-        required=False, 
-        default='steps', 
-        help='Training strategy. Choose between steps and epoch.'
-    )
-    parser.add_argument(
-        '--learning_rate', 
-        type=float, 
-        required=False, 
-        default=1.75e-5, 
-        help='Learning rate for the fine-tuning process.'
-    )
-    parser.add_argument(
-        '--warmup', 
-        type=int, 
-        required=False, 
-        default=20000, 
-        help='Number of warmup steps.'
-    )
-    parser.add_argument(
         '--batchsize', 
         type=int, 
         required=False, 
         default=48, 
         help='Batch size during the training phase.'
     )
-    parser.add_argument(
-        '--num_epochs', 
-        type=int, 
-        required=False, 
-        default=20, 
-        help='Number of epochs to train for.'
-    )
-    parser.add_argument(
-        '--num_steps', 
-        type=int, 
-        required=False, 
-        default=100000, 
-        help='Number of steps to train for.'
-    )
-    parser.add_argument(
-        '--resume_from_ckpt', 
-        type=str, 
-        required=False, 
-        default=None, 
-        help='Path to a trained checkpoint to resume training from.'
-    )
-    parser.add_argument(
-        "--save_model", 
-        type=str, 
-        choices=['True', 'False'], 
-        default='True', 
-        help="Store the training model or no")
-    parser.add_argument(
-        "--project_name", 
-        type=str, 
-        default='None', 
-        help="Name of the project")
     parser.add_argument(
         '--output_dir', 
         type=str, 
