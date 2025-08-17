@@ -7,12 +7,10 @@ import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
 from datasets import Audio, load_from_disk
-from transformers.models.whisper.english_normalizer import BasicTextNormalizer
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
-from difflib import SequenceMatcher
-from functools import partial
 from multiprocessing import Pool
-
+from Model.utils import add_leace
+from utils.useage import chunk_audio, transcribe_chunks, clean_transcript
 # ===============================
 # Globals (per process)
 # ===============================
@@ -25,71 +23,6 @@ layer_idx_global = None
 # ===============================
 # Utility Functions
 # ===============================
-
-def clean_transcript(text, max_repeat=2):
-    fillers = {"um", "uh", "er", "ah", "like", "hmm"}
-    tokens = text.strip().split()
-    cleaned_tokens = []
-    i = 0
-    while i < len(tokens):
-        token_lower = tokens[i].lower()
-        if token_lower in fillers:
-            i += 1
-            continue
-        repeat_skipped = False
-        for n in (3,2,1):
-            if i + 2*n <= len(tokens):
-                chunk = tokens[i:i+n]
-                next_chunk = tokens[i+n:i+2*n]
-                if chunk == next_chunk:
-                    i += n
-                    repeat_skipped = True
-                    break
-        if repeat_skipped:
-            continue
-        cleaned_tokens.append(tokens[i])
-        i += 1
-    return " ".join(cleaned_tokens)
-
-def chunk_audio(audio_array, sr, chunk_length_s=30, stride_s=6):
-    chunk_samples = int(sr * chunk_length_s)
-    stride_samples = int(sr * stride_s)
-    chunks = []
-    for start in range(0, len(audio_array), chunk_samples - stride_samples):
-        end = min(start + chunk_samples, len(audio_array))
-        chunks.append(audio_array[start:end])
-        if end == len(audio_array):
-            break
-    return chunks
-
-def smart_merge(predictions, min_overlap=3):
-    if not predictions:
-        return ""
-    final_words = predictions[0].strip().split()
-    for i in range(1, len(predictions)):
-        curr_words = predictions[i].strip().split()
-        matcher = SequenceMatcher(None, final_words, curr_words)
-        match = matcher.find_longest_match(0, len(final_words), 0, len(curr_words))
-        if match.size >= min_overlap:
-            left = final_words[:match.a]
-            right = curr_words[match.b+match.size:]
-            final_words = left + curr_words[match.b:match.b+match.size] + right
-        else:
-            final_words += curr_words
-    return " ".join(final_words)
-
-def transcribe_chunks(chunks, sr, processor, model, device, forced_decoder_ids, accent_id=None):
-    inputs = processor.feature_extractor(chunks, sampling_rate=sr, return_tensors="pt")
-    input_features = inputs.input_features.to(device)
-    if accent_id is not None:
-        generated_ids = model.generate(
-            input_features,
-            accent_id=accent_id,
-        )
-    else:
-        generated_ids = model.generate(input_features)
-    text = processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    return smart_merge(text)
 
 def skip_layer_output(module, input, output):
     if isinstance(output, tuple):
@@ -105,27 +38,26 @@ def init_worker(args, layer_idx):
 
     args_global = args
     layer_idx_global = layer_idx
-
-    if args.is_public_repo == False:
+    model_id = args.model_name
+    if (args.is_public_repo == False) and (args.strategy != "leace"):
         processor = WhisperProcessor.from_pretrained(args.ckpt_dir)
-        model = Whisper({
-            "model_name": args.hf_model,
-            "strategy": args.strategy,
-            "language": args.language,
-            "device": "cpu"
-        })
-        model.load_state_dict(
-            torch.load(
-                f"/work3/s232855/Models/{args.ckpt_dir}/full_model.pth",
-                map_location="cpu"
-            )
-        )
+        model = Whisper(vars(args))
+        if args.strategy == "lora":
+            state_dict = torch.load(os.path.join(args.ckpt_dir, "best_model.pt"), map_location=args.device)
+            new_state_dict = {}
+            for k, v in state_dict.items():
+                new_key = k.replace("module.", "") if k.startswith("module.") else k
+                new_state_dict[new_key] = v
+            model.load_state_dict(new_state_dict)
+            model.load_state_dict({k.replace("module.", ""): v for k, v in state_dict.items()})
+        elif args.strategy == "lwf":
+            model.load_state_dict(torch.load(f"{args.ckpt_dir}/full_model.pth", map_location=args.device))
         model.eval()
     else:
-        model = WhisperForConditionalGeneration.from_pretrained(args.hf_model)
-        processor = WhisperProcessor.from_pretrained(
-            args.hf_model, language=args.language, task="transcribe"
-        )
+        model = WhisperForConditionalGeneration.from_pretrained(model_id)
+        processor = WhisperProcessor.from_pretrained(model_id, language=args.language, task="transcribe")
+        if args.strategy == "leace":
+            model = add_leace(model, args.ckpt_dir)
     model.to("cpu")
 
     forced_decoder_ids = processor.get_decoder_prompt_ids(
@@ -150,7 +82,7 @@ def process_single_file(item):
     sr = audio["sampling_rate"]
     chunks = chunk_audio(audio_array, sr, chunk_length_s=25, stride_s=5)
 
-    if args_global.is_public_repo == False:
+    if (args_global.is_public_repo == False) and (args_global.strategy != "leace"):
         chunk_preds = transcribe_chunks(
             chunks, sr, processor, model, "cpu", forced_decoder_ids,
             accent_id=torch.tensor([accent_map[language_family_dict[accent]]])
@@ -208,7 +140,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--is_public_repo", required=False, default=True,
         type=lambda x: (str(x).lower() == 'true'))
-    parser.add_argument("--hf_model", type=str, required=False, default="openai/whisper-small")
+    parser.add_argument("--model_name", type=str, required=False, default="openai/whisper-small")
     parser.add_argument("--strategy", type=str, required=False, default="lora")
     parser.add_argument("--ckpt_dir", type=str, required=False, default=".")
     parser.add_argument("--language", type=str, required=False, default="en")
