@@ -92,17 +92,6 @@ def main(args):
         base_df = pd.DataFrame({"id": filenames, "prediction": all_preds})
         outputs_df = pd.concat([base_df, performance_df], axis=1)
 
-
-        # outputs_df = pd.DataFrame({
-        #     "id": filenames, 
-        #     "prediction": all_preds, 
-        #     "WER": all_performances["WER"],
-        #     "CER": all_performances["CER"],
-        #     "MER": all_performances["MER"],
-        #     "WIL": all_performances["WIL"],
-        #     "Ember": all_performances["Ember"],
-        #     "SemDist": all_performances["SemDist"],
-        # })
         output_csv_path = os.path.join(args.output_dir, f"{args.outputs}.csv")
         outputs_df.to_csv(output_csv_path, index=False)
 
