@@ -55,15 +55,18 @@ def evaluate_predictions(prediction_csv, output_csv):
 
 if __name__ == "__main__":
     import glob
-
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--eval_dir", type=str, required=True, default=[])
+    args = parser.parse_args()
     # Change this pattern to match your files:
-    prediction_files = sorted(glob.glob("results/ablation/leace/ablation*.csv"))
+    prediction_files = sorted(glob.glob(os.path.join(args.eval_dir, "ablation*.csv")))
 
     all_eval_results = []
     for pred_csv in prediction_files:
         layer_name = os.path.splitext(os.path.basename(pred_csv))[0]
         print(layer_name)
-        eval_csv = f"results/ablation/leace/eval_{layer_name}.csv"
+        eval_csv = f"{args.eval_dir}/eval_{layer_name}.csv"
         df = evaluate_predictions(pred_csv, eval_csv)
         # Optionally collect for summary
         df["Layer"] = layer_name

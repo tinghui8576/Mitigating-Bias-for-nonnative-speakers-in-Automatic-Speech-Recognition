@@ -5,6 +5,8 @@ import soundfile as sf
 import io
 import csv
 import pandas as pd
+from utils.eval import metrics
+from utils.constant import sentence
 
 output_csv = "ssa_google.csv"
 
@@ -12,7 +14,7 @@ output_csv = "ssa_google.csv"
 if not os.path.exists(output_csv):
     with open(output_csv, "w", newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["id", "transcript"])  # header
+        writer.writerow(["id", "transcript", "WER", "CER", "MER", "WIL", "Ember", "SemDist"])  # header
 
 # Transcribe a chunk of audio using Google Cloud Speech-to-Text
 def transcribe_audio_chunk(audio_chunk, sr):
@@ -72,11 +74,11 @@ for _, row in meta_saa.iterrows():
         print(f"Transcribing {file_path} for language: {row['native_language']}")
         try:
             transcript = transcribe_file(file_path)
-
+            performance =metrics(transcript, sentence)
             # Save the result immediately
             with open(output_csv, "a", newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([row["filename"], transcript])
+                writer.writerow([row["filename"], transcript, performance])
             
             print(f"✅ Saved transcript for {row['filename']}")
 
