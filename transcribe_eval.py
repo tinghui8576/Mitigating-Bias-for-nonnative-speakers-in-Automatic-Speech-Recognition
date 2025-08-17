@@ -10,29 +10,35 @@ from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from utils.useage import chunk_audio, transcribe_chunks, clean_transcript
 from utils.eval import metrics
 from utils.constant import sentence
-import re
 
-def get_text(sample):
-    if "text" in sample:
-        return sample["text"]
-    elif "sentence" in sample:
-        return sample["sentence"]
-    elif "normalized_text" in sample:
-        return sample["normalized_text"]
-    elif "transcript" in sample:
-        return sample["transcript"]
-    elif "transcription" in sample:
-        return sample["transcription"]
-    else:
-        raise ValueError(
-            f"Expected transcript column of either 'text', 'sentence', 'normalized_text' or 'transcript'. Got sample of "
-            ".join{sample.keys()}. Ensure a text column name is present in the dataset."
-        )
+def add_leace(model):
+    eraser_dir = "models/leace_erasers/"
+    erasers = []
+    layers_to_hook = [11]
+    
+    # Load erasers for these layers
+    for i in layers_to_hook:
+        path = os.path.join(eraser_dir, f"leace_eraser_layer{i}.pt")
+        erasers.append(torch.load(path))
 
+    # Register hooks only on these layers
+    for layer_idx, eraser in zip(layers_to_hook, erasers):
+        layer = model.model.encoder.layers[layer_idx]
+        
+        def make_hook(my_eraser):
+            def hook_fn(module, input, output):
+                hidden_states = output[0]
+                erased = my_eraser(hidden_states.squeeze(0)).unsqueeze(0)
+                return (erased,)
+            return hook_fn
+        
+        layer.register_forward_hook(make_hook(eraser))
+    return model
 
 def main(args):
     args.device = torch.device(f"cuda:{args.device}" if args.device >= 0 else "cpu")
-    if args.is_public_repo == False:
+    model_id = args.model_name
+    if (args.is_public_repo == False) and (args.strategy != "leace"):
         # Load processor and custom Whisper model
         processor = WhisperProcessor.from_pretrained(args.ckpt_dir)
         model = Whisper(vars(args))
@@ -46,12 +52,14 @@ def main(args):
             model.load_state_dict({k.replace("module.", ""): v for k, v in state_dict.items()})
         elif args.strategy == "lwf":
             model.load_state_dict(torch.load(f"{args.ckpt_dir}/full_model.pth", map_location=args.device))
+
         model.eval()
     else:
-        model_id = args.model_name
         model = WhisperForConditionalGeneration.from_pretrained(model_id)
         processor = WhisperProcessor.from_pretrained(model_id, language=args.language, task="transcribe")
-    
+        if args.strategy == "leace":
+            model = add_leace(model)
+
     model.to(args.device)
 
     forced_decoder_ids = processor.get_decoder_prompt_ids(language=args.language,task="transcribe")
@@ -71,18 +79,30 @@ def main(args):
             accent = item["accents"]
             sr = audio["sampling_rate"]
             chunks = chunk_audio(audio_array, sr, chunk_length_s=25, stride_s=5)
-            if args.is_public_repo == False:
+            if (args.is_public_repo == False) and (args.strategy != "leace"):
                 chunk_preds = transcribe_chunks(chunks, sr, processor, model, args.device, forced_decoder_ids, accent_id=torch.tensor([accent_map[language_family_dict[accent]]]))
             else:
-                chunk_preds = transcribe_chunks(chunks, sr, processor, model,args.device, forced_decoder_ids)
+                chunk_preds = transcribe_chunks(chunks, sr, processor, model, args.device, forced_decoder_ids)
             chunk_preds = clean_transcript(chunk_preds)
             performance = metrics(chunk_preds, sentence)
             all_preds.append(chunk_preds)
             all_performances.append(performance)
             filenames.append(audio["path"].split("/")[-1].replace(".wav", ""))
+        performance_df = pd.DataFrame.from_records(all_performances)
+        base_df = pd.DataFrame({"id": filenames, "prediction": all_preds})
+        outputs_df = pd.concat([base_df, performance_df], axis=1)
 
 
-        outputs_df = pd.DataFrame({"id": filenames, "prediction": all_preds, "performance": all_performances})
+        # outputs_df = pd.DataFrame({
+        #     "id": filenames, 
+        #     "prediction": all_preds, 
+        #     "WER": all_performances["WER"],
+        #     "CER": all_performances["CER"],
+        #     "MER": all_performances["MER"],
+        #     "WIL": all_performances["WIL"],
+        #     "Ember": all_performances["Ember"],
+        #     "SemDist": all_performances["SemDist"],
+        # })
         output_csv_path = os.path.join(args.output_dir, f"{args.outputs}.csv")
         outputs_df.to_csv(output_csv_path, index=False)
 
@@ -107,7 +127,7 @@ if __name__ == "__main__":
         '--strategy', 
         type=str, 
         required=False, 
-        # choices=['lora', 'lwf'], 
+        choices=['lora', 'lwf', 'leace'], 
         help='Finetune Strategy for Whisper model.'
     )
     parser.add_argument(
